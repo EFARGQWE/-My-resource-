@@ -1,0 +1,1388 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF专业阅读器</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- PDF.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        }
+        
+        body {
+            overflow: hidden;
+            background-color: #f5f7fa;
+        }
+        
+        .pdf-container {
+            transition: all 0.3s ease;
+        }
+        
+        .sidebar {
+            transition: transform 0.3s ease;
+        }
+        
+        .sidebar-item:hover {
+            background-color: rgba(22, 93, 255, 0.1);
+        }
+        
+        .sidebar-item.active {
+            background-color: rgba(22, 93, 255, 0.15);
+            border-left: 3px solid #165DFF;
+        }
+        
+        .tool-btn {
+            transition: all 0.2s ease;
+        }
+        
+        .tool-btn:hover {
+            background-color: rgba(22, 93, 255, 0.1);
+        }
+        
+        .tool-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        #pdf-canvas {
+            transition: transform 0.3s ease;
+            cursor: grab;
+        }
+        
+        #pdf-canvas:active {
+            cursor: grabbing;
+        }
+        
+        /* 旋转动画 */
+        @keyframes rotate {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(90deg); }
+        }
+        
+        .rotating {
+            animation: rotate 0.3s ease forwards;
+        }
+        
+        /* 加载动画 */
+        .spinner {
+            border: 3px solid rgba(0, 0, 0, 0.1);
+            border-top: 3px solid #165DFF;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        /* 页面切换动画 */
+        .page-enter {
+            opacity: 0;
+            transform: translateY(20px);
+        }
+        
+        .page-enter-active {
+            opacity: 1;
+            transform: translateY(0);
+            transition: all 0.3s ease;
+        }
+        
+        /* 全屏样式 */
+        .fullscreen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1000;
+            background: white;
+        }
+        
+        /* 搜索高亮 */
+        .search-highlight {
+            background-color: yellow;
+            opacity: 0.7;
+        }
+        
+        /* 缩略图样式 */
+        .thumbnail {
+            border: 2px solid transparent;
+            transition: all 0.2s ease;
+        }
+        
+        .thumbnail:hover {
+            border-color: #165DFF;
+        }
+        
+        .thumbnail.active {
+            border-color: #165DFF;
+            box-shadow: 0 0 10px rgba(22, 93, 255, 0.3);
+        }
+        
+        /* 工具提示 */
+        .tooltip {
+            position: relative;
+        }
+        
+        .tooltip:hover::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            white-space: nowrap;
+            z-index: 1000;
+        }
+        
+        /* 自定义滚动条 */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 8px;
+        }
+        
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+        
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #c1c1c1;
+            border-radius: 4px;
+        }
+        
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #a8a8a8;
+        }
+        
+        /* 拖拽上传区域 */
+        .drop-zone {
+            border: 2px dashed #ccc;
+            transition: all 0.3s ease;
+        }
+        
+        .drop-zone.dragover {
+            border-color: #165DFF;
+            background-color: rgba(22, 93, 255, 0.1);
+        }
+        
+        /* 侧边栏标签页 */
+        .tab-button {
+            transition: all 0.2s ease;
+        }
+        
+        .tab-button.active {
+            background-color: #165DFF;
+            color: white;
+        }
+        
+        /* 书签样式 */
+        .bookmark-item {
+            padding: 8px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .bookmark-item:hover {
+            background-color: rgba(22, 93, 255, 0.1);
+        }
+        
+        /* 注释样式 */
+        .annotation {
+            position: absolute;
+            background: rgba(255, 255, 0, 0.3);
+            border: 1px solid #ffd700;
+            cursor: pointer;
+        }
+        
+        /* 响应式设计 */
+        @media (max-width: 768px) {
+            .sidebar {
+                position: fixed;
+                top: 0;
+                left: 0;
+                height: 100%;
+                z-index: 50;
+                transform: translateX(-100%);
+            }
+            
+            .sidebar.open {
+                transform: translateX(0);
+            }
+        }
+    </style>
+</head>
+<body class="h-screen flex flex-col">
+    <!-- 顶部导航栏 -->
+    <nav class="bg-[#165DFF] text-white p-4 flex items-center justify-between shadow-md z-10">
+        <div class="flex items-center">
+            <button id="sidebar-toggle" class="mr-4 text-white md:hidden tooltip" data-tooltip="切换侧边栏">
+                <i class="fas fa-bars text-xl"></i>
+            </button>
+            <h1 class="text-xl font-bold"><i class="fas fa-file-pdf mr-2"></i>PDF专业阅读器</h1>
+        </div>
+        
+        <!-- 搜索框 -->
+        <div class="hidden md:flex items-center mx-4 flex-1 max-w-md">
+            <div class="relative w-full">
+                <input id="search-input" type="text" placeholder="搜索文档内容..." 
+                       class="w-full px-4 py-2 pl-10 text-gray-800 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <i class="fas fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"></i>
+                <button id="search-prev" class="absolute right-16 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 tooltip" data-tooltip="上一个">
+                    <i class="fas fa-chevron-up"></i>
+                </button>
+                <button id="search-next" class="absolute right-8 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 tooltip" data-tooltip="下一个">
+                    <i class="fas fa-chevron-down"></i>
+                </button>
+                <button id="search-close" class="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 tooltip" data-tooltip="关闭搜索">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+        
+        <div class="flex items-center space-x-2">
+            <!-- 适应页面宽度 -->
+            <button id="fit-width" class="tool-btn p-2 rounded-full tooltip" data-tooltip="适应宽度">
+                <i class="fas fa-arrows-alt-h"></i>
+            </button>
+            <!-- 适应页面 -->
+            <button id="fit-page" class="tool-btn p-2 rounded-full tooltip" data-tooltip="适应页面">
+                <i class="fas fa-expand-arrows-alt"></i>
+            </button>
+            <!-- 缩放控制 -->
+            <button id="zoom-out" class="tool-btn p-2 rounded-full tooltip" data-tooltip="缩小">
+                <i class="fas fa-search-minus"></i>
+            </button>
+            <div class="relative w-24">
+                <input id="zoom-level" type="range" min="25" max="500" value="100" class="w-full">
+                <div class="absolute -top-6 left-0 right-0 text-center text-xs font-medium">
+                    <span id="zoom-percent">100%</span>
+                </div>
+            </div>
+            <button id="zoom-in" class="tool-btn p-2 rounded-full tooltip" data-tooltip="放大">
+                <i class="fas fa-search-plus"></i>
+            </button>
+            <!-- 旋转 -->
+            <button id="rotate-btn" class="tool-btn p-2 rounded-full tooltip" data-tooltip="顺时针旋转90°">
+                <i class="fas fa-redo"></i>
+            </button>
+            <!-- 打印 -->
+            <button id="print-btn" class="tool-btn p-2 rounded-full tooltip" data-tooltip="打印">
+                <i class="fas fa-print"></i>
+            </button>
+            <!-- 下载 -->
+            <button id="download-btn" class="tool-btn p-2 rounded-full tooltip" data-tooltip="下载">
+                <i class="fas fa-download"></i>
+            </button>
+            <!-- 全屏 -->
+            <button id="fullscreen-btn" class="tool-btn p-2 rounded-full tooltip" data-tooltip="全屏">
+                <i class="fas fa-expand"></i>
+            </button>
+        </div>
+    </nav>
+
+    <div class="flex flex-1 overflow-hidden">
+        <!-- 侧边栏 -->
+        <aside id="sidebar" class="sidebar bg-white w-64 md:w-80 border-r border-gray-200 flex flex-col overflow-hidden transition-all duration-300 md:translate-x-0">
+            <!-- 标签页导航 -->
+            <div class="flex border-b border-gray-200">
+                <button id="tab-files" class="tab-button flex-1 py-3 px-4 text-sm font-medium active">
+                    <i class="fas fa-folder mr-2"></i>文档
+                </button>
+                <button id="tab-thumbnails" class="tab-button flex-1 py-3 px-4 text-sm font-medium">
+                    <i class="fas fa-th-large mr-2"></i>缩略图
+                </button>
+                <button id="tab-bookmarks" class="tab-button flex-1 py-3 px-4 text-sm font-medium">
+                    <i class="fas fa-bookmark mr-2"></i>书签
+                </button>
+            </div>
+            
+            <!-- 文档列表标签页 -->
+            <div id="files-tab" class="flex-1 flex flex-col overflow-hidden">
+                <div class="p-4 border-b border-gray-200">
+                    <div class="flex items-center justify-between mb-3">
+                        <h2 class="text-lg font-semibold text-gray-800">文档库</h2>
+                        <button id="upload-btn" class="text-[#165DFF] hover:text-[#0e4acc] tooltip" data-tooltip="上传PDF">
+                            <i class="fas fa-plus"></i>
+                        </button>
+                    </div>
+                    <input type="file" id="file-input" accept=".pdf" multiple class="hidden">
+                    <div id="drop-zone" class="drop-zone p-4 text-center text-sm text-gray-500 rounded-lg">
+                        拖拽PDF文件到此处或点击上传
+                    </div>
+                </div>
+                <div class="overflow-y-auto flex-1 custom-scrollbar">
+                    <ul id="pdf-list" class="py-2">
+                        <!-- PDF列表将通过JavaScript动态生成 -->
+                    </ul>
+                </div>
+                <div class="p-4 border-t border-gray-200 text-center text-sm text-gray-500">
+                    共 <span id="file-count">4</span> 个文档
+                </div>
+            </div>
+            
+            <!-- 缩略图标签页 -->
+            <div id="thumbnails-tab" class="flex-1 flex-col overflow-hidden hidden">
+                <div class="p-4 border-b border-gray-200">
+                    <h2 class="text-lg font-semibold text-gray-800">页面缩略图</h2>
+                </div>
+                <div id="thumbnails-container" class="overflow-y-auto flex-1 custom-scrollbar p-2">
+                    <!-- 缩略图将通过JavaScript动态生成 -->
+                </div>
+            </div>
+            
+            <!-- 书签标签页 -->
+            <div id="bookmarks-tab" class="flex-1 flex-col overflow-hidden hidden">
+                <div class="p-4 border-b border-gray-200">
+                    <h2 class="text-lg font-semibold text-gray-800">书签</h2>
+                </div>
+                <div id="bookmarks-container" class="overflow-y-auto flex-1 custom-scrollbar p-2">
+                    <div class="text-center text-gray-500 py-8">
+                        <i class="fas fa-bookmark text-4xl mb-2"></i>
+                        <p>暂无书签</p>
+                        <p class="text-xs mt-1">右键点击页面添加书签</p>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- 主内容区 -->
+        <main class="flex-1 flex flex-col overflow-hidden">
+            <div id="pdf-container" class="pdf-container flex-1 overflow-auto bg-gray-100 relative custom-scrollbar">
+                <div id="pdf-viewer" class="min-h-full flex flex-col items-center py-8">
+                    <div id="pdf-placeholder" class="flex flex-col items-center justify-center h-full text-center p-8">
+                        <i class="fas fa-file-pdf text-[#165DFF] text-6xl mb-4"></i>
+                        <h2 class="text-2xl font-bold text-gray-700 mb-2">PDF阅读器</h2>
+                        <p class="text-gray-500 max-w-md mb-4">从左侧列表中选择一个PDF文件开始阅读，或使用下方按钮打开文档</p>
+                        <button id="open-file-btn" class="bg-[#165DFF] text-white px-6 py-2 rounded-lg hover:bg-[#0e4acc] transition-colors">
+                            <i class="fas fa-folder-open mr-2"></i>打开文档
+                        </button>
+                    </div>
+                    <div id="loading" class="hidden absolute inset-0 bg-white bg-opacity-80 flex items-center justify-center z-10">
+                        <div class="spinner"></div>
+                        <span class="ml-3 text-gray-700 font-medium">正在加载文档...</span>
+                    </div>
+                    <canvas id="pdf-canvas" class="shadow-lg rounded-lg bg-white"></canvas>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- 底部状态栏 -->
+    <footer class="bg-white border-t border-gray-200 p-3 flex items-center justify-between">
+        <div class="flex items-center space-x-4">
+            <div class="flex items-center">
+                <button id="prev-page" class="tool-btn p-2 rounded mr-2 tooltip" data-tooltip="上一页 (←)">
+                    <i class="fas fa-arrow-left"></i>
+                </button>
+                <span class="text-sm font-medium text-gray-700">页码: 
+                    <input type="number" id="current-page" class="w-12 text-center border rounded py-1 px-2 mx-1" min="1" value="1"> 
+                    / <span id="total-pages">1</span>
+                </span>
+                <button id="next-page" class="tool-btn p-2 rounded ml-2 tooltip" data-tooltip="下一页 (→)">
+                    <i class="fas fa-arrow-right"></i>
+                </button>
+            </div>
+            
+            <!-- 页面布局选项 -->
+            <div class="flex items-center space-x-2">
+                <button id="single-page" class="tool-btn p-2 rounded text-xs tooltip active" data-tooltip="单页视图">
+                    <i class="fas fa-file"></i>
+                </button>
+                <button id="continuous-page" class="tool-btn p-2 rounded text-xs tooltip" data-tooltip="连续页面">
+                    <i class="fas fa-bars"></i>
+                </button>
+                <button id="facing-page" class="tool-btn p-2 rounded text-xs tooltip" data-tooltip="对页视图">
+                    <i class="fas fa-columns"></i>
+                </button>
+            </div>
+        </div>
+        
+        <div class="text-sm text-gray-500 flex-1 text-center">
+            <span id="doc-title">未选择文档</span>
+        </div>
+        
+        <div class="flex items-center space-x-4">
+            <div id="search-status" class="text-sm text-gray-500 hidden">
+                <span id="search-current">0</span> / <span id="search-total">0</span>
+            </div>
+            <span class="text-sm text-gray-500">渲染引擎: PDF.js v3.4.120</span>
+        </div>
+    </footer>
+
+    <!-- 右键菜单 -->
+    <div id="context-menu" class="fixed bg-white border border-gray-200 rounded-lg shadow-lg py-2 z-50 hidden">
+        <button class="w-full text-left px-4 py-2 hover:bg-gray-100 text-sm">
+            <i class="fas fa-bookmark mr-2"></i>添加书签
+        </button>
+        <button class="w-full text-left px-4 py-2 hover:bg-gray-100 text-sm">
+            <i class="fas fa-copy mr-2"></i>复制文本
+        </button>
+        <button class="w-full text-left px-4 py-2 hover:bg-gray-100 text-sm">
+            <i class="fas fa-search mr-2"></i>搜索选中文本
+        </button>
+        <hr class="my-1">
+        <button class="w-full text-left px-4 py-2 hover:bg-gray-100 text-sm">
+            <i class="fas fa-expand mr-2"></i>全屏
+        </button>
+    </div>
+
+    <script>
+        // PDF文件列表
+        const pdfFiles = [
+            {
+                name: "《HTML5从入门到精通》中文学习教程.pdf",
+                url: "https://chenmin2025.lovestoblog.com/LAn/file1/%E3%80%8AHTML5%E4%BB%8E%E5%85%A5%E9%97%A8%E5%88%B0%E7%B2%BE%E9%80%9A%E3%80%8B%E4%B8%AD%E6%96%87%E5%AD%A6%E4%B9%A0%E6%95%99%E7%A8%8B.pdf"
+            },
+            {
+                name: "高一期末考试化学评分细则.pdf",
+                url: "https://chenmin2025.lovestoblog.com/1_%E9%AB%98%E4%B8%80%E6%9C%9F%E6%9C%AB%E8%80%83%E8%AF%95%E5%8C%96%E5%AD%A6%E8%AF%84%E5%88%86%E7%BB%86%E5%88%99(2).pdf"
+            },
+            {
+                name: "HTMLCSSJSCombined.pdf",
+                url: "https://chenmin2025.lovestoblog.com/HTMLCSSJSCombined.pdf"
+            },
+            {
+                name: "NODE.js入门手册.pdf",
+                url: "https://chenmin2025.lovestoblog.com/LAn/file1/NODE.js%E5%85%A5%E9%97%A8%E6%89%8B%E5%86%8C.pdf"
+            }
+        ];
+
+        // 应用状态
+        const state = {
+            currentPDF: null,
+            currentPage: 1,
+            totalPages: 1,
+            zoomLevel: 1.0,
+            rotation: 0,
+            isFullscreen: false,
+            viewMode: 'single', // single, continuous, facing
+            searchResults: [],
+            currentSearchIndex: -1,
+            bookmarks: [],
+            thumbnails: [],
+            isDragging: false,
+            dragStart: { x: 0, y: 0 },
+            scrollStart: { x: 0, y: 0 }
+        };
+
+        // DOM元素
+        const elements = {
+            // 基础元素
+            pdfList: document.getElementById('pdf-list'),
+            pdfCanvas: document.getElementById('pdf-canvas'),
+            currentPage: document.getElementById('current-page'),
+            totalPages: document.getElementById('total-pages'),
+            zoomLevel: document.getElementById('zoom-level'),
+            zoomPercent: document.getElementById('zoom-percent'),
+            
+            // 导航按钮
+            prevPage: document.getElementById('prev-page'),
+            nextPage: document.getElementById('next-page'),
+            zoomIn: document.getElementById('zoom-in'),
+            zoomOut: document.getElementById('zoom-out'),
+            rotateBtn: document.getElementById('rotate-btn'),
+            fullscreenBtn: document.getElementById('fullscreen-btn'),
+            
+            // 新增功能按钮
+            fitWidth: document.getElementById('fit-width'),
+            fitPage: document.getElementById('fit-page'),
+            printBtn: document.getElementById('print-btn'),
+            downloadBtn: document.getElementById('download-btn'),
+            
+            // 布局按钮
+            singlePage: document.getElementById('single-page'),
+            continuousPage: document.getElementById('continuous-page'),
+            facingPage: document.getElementById('facing-page'),
+            
+            // 搜索相关
+            searchInput: document.getElementById('search-input'),
+            searchPrev: document.getElementById('search-prev'),
+            searchNext: document.getElementById('search-next'),
+            searchClose: document.getElementById('search-close'),
+            searchStatus: document.getElementById('search-status'),
+            searchCurrent: document.getElementById('search-current'),
+            searchTotal: document.getElementById('search-total'),
+            
+            // 界面元素
+            pdfPlaceholder: document.getElementById('pdf-placeholder'),
+            loading: document.getElementById('loading'),
+            docTitle: document.getElementById('doc-title'),
+            sidebarToggle: document.getElementById('sidebar-toggle'),
+            sidebar: document.getElementById('sidebar'),
+            pdfContainer: document.getElementById('pdf-container'),
+            fileCount: document.getElementById('file-count'),
+            
+            // 标签页
+            tabFiles: document.getElementById('tab-files'),
+            tabThumbnails: document.getElementById('tab-thumbnails'),
+            tabBookmarks: document.getElementById('tab-bookmarks'),
+            filesTab: document.getElementById('files-tab'),
+            thumbnailsTab: document.getElementById('thumbnails-tab'),
+            bookmarksTab: document.getElementById('bookmarks-tab'),
+            thumbnailsContainer: document.getElementById('thumbnails-container'),
+            bookmarksContainer: document.getElementById('bookmarks-container'),
+            
+            // 文件上传
+            uploadBtn: document.getElementById('upload-btn'),
+            fileInput: document.getElementById('file-input'),
+            dropZone: document.getElementById('drop-zone'),
+            openFileBtn: document.getElementById('open-file-btn'),
+            
+            // 右键菜单
+            contextMenu: document.getElementById('context-menu')
+        };
+
+        // 初始化PDF.js
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+
+        // 渲染PDF列表
+        function renderPDFList() {
+            elements.pdfList.innerHTML = '';
+            elements.fileCount.textContent = pdfFiles.length;
+            
+            pdfFiles.forEach((file, index) => {
+                const listItem = document.createElement('li');
+                listItem.className = 'sidebar-item px-4 py-3 cursor-pointer flex items-center border-b border-gray-100';
+                listItem.innerHTML = `
+                    <i class="fas fa-file-pdf text-[#165DFF] mr-3 text-lg"></i>
+                    <div class="flex-1 min-w-0">
+                        <div class="font-medium text-gray-800 truncate">${file.name}</div>
+                        <div class="text-xs text-gray-500 truncate">${file.url}</div>
+                    </div>
+                    <button class="remove-pdf text-gray-400 hover:text-red-500 ml-2" data-index="${index}">
+                        <i class="fas fa-times"></i>
+                    </button>
+                `;
+                
+                listItem.addEventListener('click', (e) => {
+                    if (e.target.closest('.remove-pdf')) {
+                        e.stopPropagation();
+                        removePDF(index);
+                        return;
+                    }
+                    
+                    // 移除所有active类
+                    document.querySelectorAll('.sidebar-item').forEach(item => {
+                        item.classList.remove('active');
+                    });
+                    
+                    // 添加active类到当前项
+                    listItem.classList.add('active');
+                    
+                    // 加载PDF
+                    loadPDF(file.url, file.name);
+                });
+                
+                elements.pdfList.appendChild(listItem);
+            });
+        }
+
+        // 移除PDF
+        function removePDF(index) {
+            pdfFiles.splice(index, 1);
+            renderPDFList();
+            
+            // 如果删除的是当前文档，清空显示
+            if (elements.docTitle.textContent === pdfFiles[index]?.name) {
+                resetViewer();
+            }
+        }
+
+        // 重置查看器
+        function resetViewer() {
+            state.currentPDF = null;
+            elements.pdfCanvas.style.display = 'none';
+            elements.pdfPlaceholder.classList.remove('hidden');
+            elements.docTitle.textContent = '未选择文档';
+            clearThumbnails();
+            clearBookmarks();
+        }
+
+        // 加载PDF文档
+        async function loadPDF(url, title) {
+            try {
+                // 显示加载状态
+                elements.loading.classList.remove('hidden');
+                elements.pdfPlaceholder.classList.add('hidden');
+                elements.pdfCanvas.style.display = 'block';
+                
+                // 重置状态
+                state.currentPage = 1;
+                state.rotation = 0;
+                state.zoomLevel = 1.0;
+                state.currentPDF = null;
+                state.searchResults = [];
+                state.currentSearchIndex = -1;
+                
+                // 更新文档标题
+                elements.docTitle.textContent = title;
+                
+                // 加载PDF
+                const loadingTask = pdfjsLib.getDocument(url);
+                const pdf = await loadingTask.promise;
+                
+                state.currentPDF = pdf;
+                state.totalPages = pdf.numPages;
+                elements.totalPages.textContent = state.totalPages;
+                elements.currentPage.value = state.currentPage;
+                
+                // 启用/禁用导航按钮
+                updateNavigationButtons();
+                
+                // 渲染第一页
+                await renderPage();
+                
+                // 生成缩略图
+                await generateThumbnails();
+                
+                // 提取书签
+                await extractBookmarks();
+                
+            } catch (error) {
+                console.error('Error loading PDF:', error);
+                elements.pdfPlaceholder.innerHTML = `
+                    <i class="fas fa-exclamation-triangle text-red-500 text-6xl mb-4"></i>
+                    <h2 class="text-2xl font-bold text-gray-700 mb-2">加载PDF失败</h2>
+                    <p class="text-gray-500 max-w-md">无法加载文档: ${error.message}，请检查网络连接或文件是否存在</p>
+                `;
+                elements.pdfPlaceholder.classList.remove('hidden');
+                elements.pdfCanvas.style.display = 'none';
+            } finally {
+                elements.loading.classList.add('hidden');
+            }
+        }
+
+        // 渲染当前页
+        async function renderPage() {
+            if (!state.currentPDF) return;
+            
+            elements.loading.classList.remove('hidden');
+            
+            try {
+                const page = await state.currentPDF.getPage(state.currentPage);
+                
+                // 计算缩放比例
+                let scale = state.zoomLevel;
+                const viewport = page.getViewport({ scale: 1, rotation: state.rotation });
+                
+                // 适应宽度或页面
+                if (state.fitMode === 'width') {
+                    const containerWidth = elements.pdfContainer.clientWidth - 40; // 减去padding
+                    scale = containerWidth / viewport.width;
+                } else if (state.fitMode === 'page') {
+                    const containerWidth = elements.pdfContainer.clientWidth - 40;
+                    const containerHeight = elements.pdfContainer.clientHeight - 40;
+                    const scaleX = containerWidth / viewport.width;
+                    const scaleY = containerHeight / viewport.height;
+                    scale = Math.min(scaleX, scaleY);
+                }
+                
+                const scaledViewport = page.getViewport({ 
+                    scale: scale * 2, // 提高渲染质量
+                    rotation: state.rotation 
+                });
+                
+                // 设置canvas尺寸
+                elements.pdfCanvas.height = scaledViewport.height;
+                elements.pdfCanvas.width = scaledViewport.width;
+                elements.pdfCanvas.style.width = (scaledViewport.width / 2) + 'px';
+                elements.pdfCanvas.style.height = (scaledViewport.height / 2) + 'px';
+                
+                // 渲染PDF页面
+                const renderContext = {
+                    canvasContext: elements.pdfCanvas.getContext('2d'),
+                    viewport: scaledViewport
+                };
+                
+                await page.render(renderContext).promise;
+                
+                // 更新缩放显示
+                updateZoomUI();
+                
+                // 滚动到顶部
+                elements.pdfContainer.scrollTop = 0;
+                
+                // 更新缩略图选中状态
+                updateThumbnailSelection();
+                
+            } catch (error) {
+                console.error('Error rendering page:', error);
+            } finally {
+                elements.loading.classList.add('hidden');
+            }
+        }
+
+        // 生成缩略图
+        async function generateThumbnails() {
+            if (!state.currentPDF) return;
+            
+            elements.thumbnailsContainer.innerHTML = '<div class="text-center py-4"><div class="spinner mx-auto"></div><p class="mt-2 text-sm text-gray-500">生成缩略图中...</p></div>';
+            
+            try {
+                const thumbnails = [];
+                const scale = 0.3; // 缩略图缩放比例
+                
+                for (let pageNum = 1; pageNum <= state.totalPages; pageNum++) {
+                    const page = await state.currentPDF.getPage(pageNum);
+                    const viewport = page.getViewport({ scale, rotation: 0 });
+                    
+                    const canvas = document.createElement('canvas');
+                    const context = canvas.getContext('2d');
+                    canvas.height = viewport.height;
+                    canvas.width = viewport.width;
+                    
+                    await page.render({
+                        canvasContext: context,
+                        viewport: viewport
+                    }).promise;
+                    
+                    thumbnails.push({
+                        pageNum,
+                        canvas,
+                        dataUrl: canvas.toDataURL()
+                    });
+                }
+                
+                state.thumbnails = thumbnails;
+                renderThumbnails();
+                
+            } catch (error) {
+                console.error('Error generating thumbnails:', error);
+                elements.thumbnailsContainer.innerHTML = '<div class="text-center py-8 text-gray-500"><i class="fas fa-exclamation-triangle text-2xl mb-2"></i><p>缩略图生成失败</p></div>';
+            }
+        }
+
+        // 渲染缩略图
+        function renderThumbnails() {
+            elements.thumbnailsContainer.innerHTML = '';
+            
+            state.thumbnails.forEach(thumbnail => {
+                const thumbnailDiv = document.createElement('div');
+                thumbnailDiv.className = `thumbnail p-2 mb-2 cursor-pointer rounded ${thumbnail.pageNum === state.currentPage ? 'active' : ''}`;
+                thumbnailDiv.innerHTML = `
+                    <img src="${thumbnail.dataUrl}" class="w-full rounded shadow-sm">
+                    <div class="text-center text-xs mt-1 text-gray-600">第 ${thumbnail.pageNum} 页</div>
+                `;
+                
+                thumbnailDiv.addEventListener('click', () => {
+                    goToPage(thumbnail.pageNum);
+                });
+                
+                elements.thumbnailsContainer.appendChild(thumbnailDiv);
+            });
+        }
+
+        // 更新缩略图选中状态
+        function updateThumbnailSelection() {
+            document.querySelectorAll('.thumbnail').forEach((thumb, index) => {
+                if (index + 1 === state.currentPage) {
+                    thumb.classList.add('active');
+                } else {
+                    thumb.classList.remove('active');
+                }
+            });
+        }
+
+        // 清空缩略图
+        function clearThumbnails() {
+            state.thumbnails = [];
+            elements.thumbnailsContainer.innerHTML = '<div class="text-center text-gray-500 py-8"><i class="fas fa-th-large text-4xl mb-2"></i><p>暂无缩略图</p></div>';
+        }
+
+        // 提取书签
+        async function extractBookmarks() {
+            if (!state.currentPDF) return;
+            
+            try {
+                const outline = await state.currentPDF.getOutline();
+                if (outline && outline.length > 0) {
+                    state.bookmarks = outline;
+                    renderBookmarks(outline);
+                } else {
+                    elements.bookmarksContainer.innerHTML = '<div class="text-center text-gray-500 py-8"><i class="fas fa-bookmark text-4xl mb-2"></i><p>此文档无书签</p></div>';
+                }
+            } catch (error) {
+                console.error('Error extracting bookmarks:', error);
+                elements.bookmarksContainer.innerHTML = '<div class="text-center text-gray-500 py-8"><i class="fas fa-bookmark text-4xl mb-2"></i><p>无法提取书签</p></div>';
+            }
+        }
+
+        // 渲染书签
+        function renderBookmarks(bookmarks, level = 0) {
+            if (level === 0) {
+                elements.bookmarksContainer.innerHTML = '';
+            }
+            
+            bookmarks.forEach(bookmark => {
+                const bookmarkDiv = document.createElement('div');
+                bookmarkDiv.className = `bookmark-item text-sm`;
+                bookmarkDiv.style.paddingLeft = `${level * 16 + 12}px`;
+                bookmarkDiv.innerHTML = `
+                    <i class="fas fa-bookmark text-[#165DFF] mr-2"></i>
+                    <span class="truncate">${bookmark.title}</span>
+                `;
+                
+                bookmarkDiv.addEventListener('click', async () => {
+                    if (bookmark.dest) {
+                        try {
+                            const dest = await state.currentPDF.getDestination(bookmark.dest);
+                            if (dest) {
+                                const pageRef = dest[0];
+                                const pageIndex = await state.currentPDF.getPageIndex(pageRef);
+                                goToPage(pageIndex + 1);
+                            }
+                        } catch (error) {
+                            console.error('Error navigating to bookmark:', error);
+                        }
+                    }
+                });
+                
+                elements.bookmarksContainer.appendChild(bookmarkDiv);
+                
+                // 递归渲染子书签
+                if (bookmark.items && bookmark.items.length > 0) {
+                    renderBookmarks(bookmark.items, level + 1);
+                }
+            });
+        }
+
+        // 清空书签
+        function clearBookmarks() {
+            state.bookmarks = [];
+            elements.bookmarksContainer.innerHTML = '<div class="text-center text-gray-500 py-8"><i class="fas fa-bookmark text-4xl mb-2"></i><p>暂无书签</p></div>';
+        }
+
+        // 跳转到指定页面
+        function goToPage(pageNum) {
+            if (pageNum < 1 || pageNum > state.totalPages) return;
+            
+            state.currentPage = pageNum;
+            elements.currentPage.value = state.currentPage;
+            updateNavigationButtons();
+            renderPage();
+        }
+
+        // 更新导航按钮状态
+        function updateNavigationButtons() {
+            elements.prevPage.disabled = state.currentPage <= 1;
+            elements.nextPage.disabled = state.currentPage >= state.totalPages;
+        }
+
+        // 搜索文档内容
+        async function searchInDocument(query) {
+            if (!state.currentPDF || !query.trim()) {
+                clearSearchResults();
+                return;
+            }
+            
+            elements.loading.classList.remove('hidden');
+            state.searchResults = [];
+            
+            try {
+                for (let pageNum = 1; pageNum <= state.totalPages; pageNum++) {
+                    const page = await state.currentPDF.getPage(pageNum);
+                    const textContent = await page.getTextContent();
+                    
+                    let pageText = '';
+                    textContent.items.forEach(item => {
+                        pageText += item.str + ' ';
+                    });
+                    
+                    const regex = new RegExp(query, 'gi');
+                    let match;
+                    while ((match = regex.exec(pageText)) !== null) {
+                        state.searchResults.push({
+                            pageNum,
+                            index: match.index,
+                            text: match[0]
+                        });
+                    }
+                }
+                
+                updateSearchUI();
+                
+                if (state.searchResults.length > 0) {
+                    state.currentSearchIndex = 0;
+                    goToSearchResult(0);
+                }
+                
+            } catch (error) {
+                console.error('Error searching document:', error);
+            } finally {
+                elements.loading.classList.add('hidden');
+            }
+        }
+
+        // 更新搜索UI
+        function updateSearchUI() {
+            if (state.searchResults.length > 0) {
+                elements.searchStatus.classList.remove('hidden');
+                elements.searchTotal.textContent = state.searchResults.length;
+                elements.searchCurrent.textContent = state.currentSearchIndex + 1;
+            } else {
+                elements.searchStatus.classList.add('hidden');
+            }
+        }
+
+        // 跳转到搜索结果
+        function goToSearchResult(index) {
+            if (index < 0 || index >= state.searchResults.length) return;
+            
+            state.currentSearchIndex = index;
+            const result = state.searchResults[index];
+            goToPage(result.pageNum);
+            updateSearchUI();
+        }
+
+        // 清空搜索结果
+        function clearSearchResults() {
+            state.searchResults = [];
+            state.currentSearchIndex = -1;
+            elements.searchStatus.classList.add('hidden');
+            elements.searchInput.value = '';
+        }
+
+        // 适应宽度
+        function fitToWidth() {
+            state.fitMode = 'width';
+            renderPage();
+        }
+
+        // 适应页面
+        function fitToPage() {
+            state.fitMode = 'page';
+            renderPage();
+        }
+
+        // 打印文档
+        function printDocument() {
+            if (!state.currentPDF) return;
+            
+            const printWindow = window.open('', '_blank');
+            printWindow.document.write(`
+                <html>
+                    <head>
+                        <title>打印 - ${elements.docTitle.textContent}</title>
+                        <style>
+                            body { margin: 0; padding: 20px; }
+                            canvas { max-width: 100%; height: auto; page-break-after: always; }
+                        </style>
+                    </head>
+                    <body>
+                        <canvas id="print-canvas"></canvas>
+                        <script>
+                            window.onload = function() {
+                                window.print();
+                                window.close();
+                            };
+                        <\/script>
+                    </body>
+                </html>
+            `);
+            
+            // 这里可以添加更复杂的打印逻辑
+        }
+
+        // 下载文档
+        function downloadDocument() {
+            if (!state.currentPDF) return;
+            
+            const link = document.createElement('a');
+            link.href = state.currentPDF.url || '#';
+            link.download = elements.docTitle.textContent || 'document.pdf';
+            link.click();
+        }
+
+        // 初始化事件监听器
+        function initEventListeners() {
+            // 页码导航
+            elements.prevPage.addEventListener('click', () => {
+                if (state.currentPage > 1) {
+                    goToPage(state.currentPage - 1);
+                }
+            });
+            
+            elements.nextPage.addEventListener('click', () => {
+                if (state.currentPage < state.totalPages) {
+                    goToPage(state.currentPage + 1);
+                }
+            });
+            
+            elements.currentPage.addEventListener('change', () => {
+                let pageNum = parseInt(elements.currentPage.value);
+                if (pageNum < 1) pageNum = 1;
+                if (pageNum > state.totalPages) pageNum = state.totalPages;
+                goToPage(pageNum);
+            });
+            
+            // 缩放控制
+            elements.zoomIn.addEventListener('click', () => {
+                state.zoomLevel = Math.min(5.0, state.zoomLevel + 0.25);
+                state.fitMode = null;
+                updateZoomUI();
+                renderPage();
+            });
+            
+            elements.zoomOut.addEventListener('click', () => {
+                state.zoomLevel = Math.max(0.25, state.zoomLevel - 0.25);
+                state.fitMode = null;
+                updateZoomUI();
+                renderPage();
+            });
+            
+            elements.zoomLevel.addEventListener('input', () => {
+                const zoomValue = parseInt(elements.zoomLevel.value);
+                state.zoomLevel = zoomValue / 100;
+                state.fitMode = null;
+                updateZoomUI();
+                renderPage();
+            });
+            
+            // 适应功能
+            elements.fitWidth.addEventListener('click', fitToWidth);
+            elements.fitPage.addEventListener('click', fitToPage);
+            
+            // 旋转
+            elements.rotateBtn.addEventListener('click', () => {
+                state.rotation = (state.rotation + 90) % 360;
+                renderPage();
+            });
+            
+            // 打印和下载
+            elements.printBtn.addEventListener('click', printDocument);
+            elements.downloadBtn.addEventListener('click', downloadDocument);
+            
+            // 全屏
+            elements.fullscreenBtn.addEventListener('click', toggleFullscreen);
+            
+            // 搜索功能
+            elements.searchInput.addEventListener('input', debounce((e) => {
+                searchInDocument(e.target.value);
+            }, 300));
+            
+            elements.searchPrev.addEventListener('click', () => {
+                if (state.currentSearchIndex > 0) {
+                    goToSearchResult(state.currentSearchIndex - 1);
+                }
+            });
+            
+            elements.searchNext.addEventListener('click', () => {
+                if (state.currentSearchIndex < state.searchResults.length - 1) {
+                    goToSearchResult(state.currentSearchIndex + 1);
+                }
+            });
+            
+            elements.searchClose.addEventListener('click', clearSearchResults);
+            
+            // 标签页切换
+            elements.tabFiles.addEventListener('click', () => switchTab('files'));
+            elements.tabThumbnails.addEventListener('click', () => switchTab('thumbnails'));
+            elements.tabBookmarks.addEventListener('click', () => switchTab('bookmarks'));
+            
+            // 文件上传
+            elements.uploadBtn.addEventListener('click', () => elements.fileInput.click());
+            elements.openFileBtn.addEventListener('click', () => elements.fileInput.click());
+            elements.fileInput.addEventListener('change', handleFileUpload);
+            
+            // 拖拽上传
+            elements.dropZone.addEventListener('click', () => elements.fileInput.click());
+            elements.dropZone.addEventListener('dragover', handleDragOver);
+            elements.dropZone.addEventListener('dragleave', handleDragLeave);
+            elements.dropZone.addEventListener('drop', handleDrop);
+            
+            // 侧边栏切换
+            elements.sidebarToggle.addEventListener('click', () => {
+                elements.sidebar.classList.toggle('open');
+            });
+            
+            // 键盘快捷键
+            document.addEventListener('keydown', handleKeyboardShortcuts);
+            
+            // 鼠标拖拽
+            elements.pdfCanvas.addEventListener('mousedown', handleMouseDown);
+            document.addEventListener('mousemove', handleMouseMove);
+            document.addEventListener('mouseup', handleMouseUp);
+            
+            // 右键菜单
+            elements.pdfCanvas.addEventListener('contextmenu', handleContextMenu);
+            document.addEventListener('click', hideContextMenu);
+            
+            // 布局模式
+            elements.singlePage.addEventListener('click', () => setViewMode('single'));
+            elements.continuousPage.addEventListener('click', () => setViewMode('continuous'));
+            elements.facingPage.addEventListener('click', () => setViewMode('facing'));
+        }
+
+        // 防抖函数
+        function debounce(func, wait) {
+            let timeout;
+            return function executedFunction(...args) {
+                const later = () => {
+                    clearTimeout(timeout);
+                    func(...args);
+                };
+                clearTimeout(timeout);
+                timeout = setTimeout(later, wait);
+            };
+        }
+
+        // 切换标签页
+        function switchTab(tabName) {
+            // 更新标签按钮状态
+            document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+            document.getElementById(`tab-${tabName}`).classList.add('active');
+            
+            // 显示对应内容
+            elements.filesTab.classList.add('hidden');
+            elements.thumbnailsTab.classList.add('hidden');
+            elements.bookmarksTab.classList.add('hidden');
+            
+            document.getElementById(`${tabName}-tab`).classList.remove('hidden');
+            document.getElementById(`${tabName}-tab`).style.display = 'flex';
+        }
+
+        // 处理文件上传
+        function handleFileUpload(event) {
+            const files = Array.from(event.target.files);
+            files.forEach(file => {
+                if (file.type === 'application/pdf') {
+                    const url = URL.createObjectURL(file);
+                    pdfFiles.push({
+                        name: file.name,
+                        url: url,
+                        isLocal: true
+                    });
+                }
+            });
+            renderPDFList();
+        }
+
+        // 处理拖拽
+        function handleDragOver(e) {
+            e.preventDefault();
+            elements.dropZone.classList.add('dragover');
+        }
+
+        function handleDragLeave(e) {
+            e.preventDefault();
+            elements.dropZone.classList.remove('dragover');
+        }
+
+        function handleDrop(e) {
+            e.preventDefault();
+            elements.dropZone.classList.remove('dragover');
+            
+            const files = Array.from(e.dataTransfer.files);
+            files.forEach(file => {
+                if (file.type === 'application/pdf') {
+                    const url = URL.createObjectURL(file);
+                    pdfFiles.push({
+                        name: file.name,
+                        url: url,
+                        isLocal: true
+                    });
+                }
+            });
+            renderPDFList();
+        }
+
+        // 键盘快捷键
+        function handleKeyboardShortcuts(e) {
+            if (e.target.tagName === 'INPUT') return;
+            
+            switch(e.key) {
+                case 'ArrowLeft':
+                    e.preventDefault();
+                    if (state.currentPage > 1) goToPage(state.currentPage - 1);
+                    break;
+                case 'ArrowRight':
+                    e.preventDefault();
+                    if (state.currentPage < state.totalPages) goToPage(state.currentPage + 1);
+                    break;
+                case 'Home':
+                    e.preventDefault();
+                    goToPage(1);
+                    break;
+                case 'End':
+                    e.preventDefault();
+                    goToPage(state.totalPages);
+                    break;
+                case '+':
+                case '=':
+                    if (e.ctrlKey) {
+                        e.preventDefault();
+                        elements.zoomIn.click();
+                    }
+                    break;
+                case '-':
+                    if (e.ctrlKey) {
+                        e.preventDefault();
+                        elements.zoomOut.click();
+                    }
+                    break;
+                case 'f':
+                    if (e.ctrlKey) {
+                        e.preventDefault();
+                        elements.searchInput.focus();
+                    }
+                    break;
+                case 'F11':
+                    e.preventDefault();
+                    toggleFullscreen();
+                    break;
+                case 'r':
+                    if (e.ctrlKey) {
+                        e.preventDefault();
+                        elements.rotateBtn.click();
+                    }
+                    break;
+            }
+        }
+
+        // 鼠标拖拽功能
+        function handleMouseDown(e) {
+            if (e.button === 0) { // 左键
+                state.isDragging = true;
+                state.dragStart = { x: e.clientX, y: e.clientY };
+                state.scrollStart = { 
+                    x: elements.pdfContainer.scrollLeft, 
+                    y: elements.pdfContainer.scrollTop 
+                };
+                elements.pdfCanvas.style.cursor = 'grabbing';
+            }
+        }
+
+        function handleMouseMove(e) {
+            if (state.isDragging) {
+                const deltaX = e.clientX - state.dragStart.x;
+                const deltaY = e.clientY - state.dragStart.y;
+                
+                elements.pdfContainer.scrollLeft = state.scrollStart.x - deltaX;
+                elements.pdfContainer.scrollTop = state.scrollStart.y - deltaY;
+            }
+        }
+
+        function handleMouseUp(e) {
+            if (state.isDragging) {
+                state.isDragging = false;
+                elements.pdfCanvas.style.cursor = 'grab';
+            }
+        }
+
+        // 右键菜单
+        function handleContextMenu(e) {
+            e.preventDefault();
+            elements.contextMenu.style.left = e.pageX + 'px';
+            elements.contextMenu.style.top = e.pageY + 'px';
+            elements.contextMenu.classList.remove('hidden');
+        }
+
+        function hideContextMenu() {
+            elements.contextMenu.classList.add('hidden');
+        }
+
+        // 设置视图模式
+        function setViewMode(mode) {
+            state.viewMode = mode;
+            
+            // 更新按钮状态
+            document.querySelectorAll('#single-page, #continuous-page, #facing-page').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            switch(mode) {
+                case 'single':
+                    elements.singlePage.classList.add('active');
+                    break;
+                case 'continuous':
+                    elements.continuousPage.classList.add('active');
+                    break;
+                case 'facing':
+                    elements.facingPage.classList.add('active');
+                    break;
+            }
+            
+            // 重新渲染页面
+            renderPage();
+        }
+
+        // 更新缩放UI
+        function updateZoomUI() {
+            const zoomPercent = Math.round(state.zoomLevel * 100);
+            elements.zoomLevel.value = zoomPercent;
+            elements.zoomPercent.textContent = `${zoomPercent}%`;
+        }
+
+        // 切换全屏
+        function toggleFullscreen() {
+            if (!state.isFullscreen) {
+                if (elements.pdfContainer.requestFullscreen) {
+                    elements.pdfContainer.requestFullscreen();
+                } else if (elements.pdfContainer.mozRequestFullScreen) {
+                    elements.pdfContainer.mozRequestFullScreen();
+                } else if (elements.pdfContainer.webkitRequestFullscreen) {
+                    elements.pdfContainer.webkitRequestFullscreen();
+                } else if (elements.pdfContainer.msRequestFullscreen) {
+                    elements.pdfContainer.msRequestFullscreen();
+                }
+                state.isFullscreen = true;
+                elements.fullscreenBtn.innerHTML = '<i class="fas fa-compress"></i>';
+            } else {
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                } else if (document.mozCancelFullScreen) {
+                    document.mozCancelFullScreen();
+                } else if (document.webkitExitFullscreen) {
+                    document.webkitExitFullscreen();
+                } else if (document.msExitFullscreen) {
+                    document.msExitFullscreen();
+                }
+                state.isFullscreen = false;
+                elements.fullscreenBtn.innerHTML = '<i class="fas fa-expand"></i>';
+            }
+        }
+
+        // 监听全屏变化
+        document.addEventListener('fullscreenchange', () => {
+            state.isFullscreen = !!document.fullscreenElement;
+            elements.fullscreenBtn.innerHTML = state.isFullscreen ? 
+                '<i class="fas fa-compress"></i>' : '<i class="fas fa-expand"></i>';
+        });
+
+        // 初始化应用
+        function initApp() {
+            renderPDFList();
+            initEventListeners();
+            updateZoomUI();
+            
+            // 初始加载第一个PDF
+            setTimeout(() => {
+                const firstItem = elements.pdfList.querySelector('.sidebar-item');
+                if (firstItem) {
+                    firstItem.click();
+                }
+            }, 500);
+        }
+
+        // 启动应用
+        window.addEventListener('DOMContentLoaded', initApp);
+    </script>
+</body>
+</html>
